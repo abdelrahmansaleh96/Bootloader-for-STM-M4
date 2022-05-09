@@ -106,7 +106,7 @@ class Ui_Form(object):
     def setupUi(self, Form):
         if not Form.objectName():
             Form.setObjectName(u"Form")
-        Form.resize(882, 292)
+        Form.setFixedSize(882, 292)
         Form.setAutoFillBackground(False)
         Form.setStyleSheet(u"")
         self.progressBar = QProgressBar(Form)
@@ -226,7 +226,8 @@ class Ui_Form(object):
         
         return
     def retranslateUi(self, Form):
-        Form.setWindowTitle(QCoreApplication.translate("Form", u"Form", None))
+        Form.setWindowTitle(QCoreApplication.translate("Form", u"Boot Loader Tool", None))
+        Form.setWindowIcon(QIcon('icon.png'))
         self.detect.setText(QCoreApplication.translate("Form", u"detect", None))
         self.label.setText(QCoreApplication.translate("Form", u"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
