@@ -69,7 +69,7 @@ typedef void (*Notify_t)(void);
 #define USART_CR2_CLKEN				0x00000800u
 
 
-/*-------Bit definition for USART_CR2 register----------------------------------------*/
+/*-------Bit definition for USART_CR3 register----------------------------------------*/
 #define USART_CR3_DMAT 			    0x00000080u
 
 
@@ -103,6 +103,7 @@ UART_StatusTypeDef Uart_SendBufferDMA(USARTHandel_t* Add_uart ,DMAcfg_t* psDMAcf
 UART_StatusTypeDef Uart_RXBuffer(USARTHandel_t* Add_uart , uint8_t * Ptr_Buff,uint32_t Size);
 UART_StatusTypeDef Uart_RegisterCpfRxComplet(USARTHandel_t* Add_uart , Notify_t Add_Cpf);
 UART_StatusTypeDef Uart_SendByte(USARTHandel_t* Add_uart , uint8_t Data);
+UART_StatusTypeDef Uart_RxByte(USARTHandel_t* Add_uart , uint8_t* Data);
 void USART1_IRQHandler(void);
 
 #endif

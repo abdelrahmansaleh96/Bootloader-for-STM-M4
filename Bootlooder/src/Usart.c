@@ -131,7 +131,7 @@ UART_StatusTypeDef Uart_SendBufferZeroCopy(USARTHandel_t* Add_uart , uint8_t * P
 UART_StatusTypeDef Uart_SendByte(USARTHandel_t* Add_uart , uint8_t Data)
 {
 	UART_StatusTypeDef Return_Staus = Ok;
-	uint8_t CountDown = 50;
+	uint32_t CountDown = 5000;
 	((volatile USARTReg_t *) (Add_uart->Channel_BaseAdress))->USART_DR = Data;
 	while( ((((volatile USARTReg_t *) (Add_uart->Channel_BaseAdress))->USART_SR) & USART_SR_TC) == 0  && CountDown)/*4- Wait for the TC bit to be Erased*/
 	{
@@ -143,6 +143,16 @@ UART_StatusTypeDef Uart_SendByte(USARTHandel_t* Add_uart , uint8_t Data)
 	}
 	return Return_Staus;
 }
+UART_StatusTypeDef Uart_RxByte(USARTHandel_t* Add_uart , uint8_t* Data)
+{
+	UART_StatusTypeDef Return_Staus = Ok;
+	//uint32_t CountDown = 5000;
+
+	while(  ((((volatile USARTReg_t *) (Add_uart->Channel_BaseAdress))->USART_SR) & USART_SR_RXNE) == 0  );/*4- Wait for the USART_SR_RXNE bit to be one*/
+	*Data = (uint8_t) ((volatile USARTReg_t *) (Add_uart->Channel_BaseAdress))->USART_DR;
+	return Return_Staus;
+}
+
 
 
 UART_StatusTypeDef Uart_RXBuffer(USARTHandel_t* Add_uart , uint8_t * Ptr_Buff,uint32_t Size)

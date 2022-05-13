@@ -13,6 +13,7 @@
 /* make sure to edit mem.ld 							  					 */
 /* -->FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 16K		                 */
 /*===========================================================================*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "diag/Trace.h"
@@ -26,11 +27,13 @@
 #include "Flash.h"
 #include "SCB.h"
 
+
 typedef enum
 {
 	SessionControl    		= 0x10,
 	RequestDownload   		= 0x34,
 	TransfareData         	= 0x36,
+	CRC 		        	= 0x31,
 	RequestTransfareExit	= 0x37
 }FlashingSec_t;
 
@@ -42,12 +45,15 @@ typedef enum
 static uint8_t BuffRecived = 0;
 static uint8_t AppArr_buff[16385];
 static USARTHandel_t Loc_uart;
+static uint32_t Loc_AppFirstAdd;
 App_t St_App;
 static void BLDManger_SendPositiveRes(void);
 static void BLDManger_ConcWord(uint8_t* pu8_bytes,uint32_t* pu8_Dest);
-static void BLDManger_FlashApp(void);
+static void BLDManger_FlashApp(uint32_t size);
 static void BLDManger_SendNegativeRes(void);
 static void BLDManger_RaisMark(void);
+static void BLDManger_Erase(void);
+static uint32_t crc32(uint32_t crc, uint8_t *buf, size_t len);
 static uint8_t Glop_Response=0;
 
 
@@ -108,7 +114,7 @@ void BLDManger_FlashingTask(void)
 {
 	static FlashingSec_t FlashingSec = SessionControl;
 	static uint8_t State = 0;
-
+	static uint32_t RemainingSize;
 	switch(FlashingSec)
 	{
 	/* First step in the Flashing sequence Its a request form the bus to enter a Flashing Sequence by sending [0x10]*/
@@ -124,9 +130,12 @@ void BLDManger_FlashingTask(void)
 		/*Check if there a update Req */
 		else if(State == 0 && (APP_INFO->App_UpdateReq) == 0x55555555)
 		{
-			State = 1;
-			BuffRecived = 1;
-			AppArr_buff[0] = SessionControl;
+			Glop_Response = SessionControl;
+			/*Send positive Response to the bus*/
+			BLDManger_SendPositiveRes();
+			BuffRecived = 0;
+			State = 0;
+			FlashingSec = RequestDownload;
 			Flash_SectorErase(1);
 		}
 		else if(State == 1 && BuffRecived == 1)
@@ -167,9 +176,9 @@ void BLDManger_FlashingTask(void)
 			BuffRecived = 0;
 			if(AppArr_buff[0] == RequestDownload)
 			{
+				Uart_RXBuffer(&Loc_uart , AppArr_buff , 12);
 				Glop_Response = AppArr_buff[0];
 				State = 2;
-				Uart_RXBuffer(&Loc_uart , AppArr_buff , 12);
 			}
 			else
 			{
@@ -180,17 +189,68 @@ void BLDManger_FlashingTask(void)
 		}
 		else if(State == 2 && BuffRecived == 1)
 		{
+			BLDManger_SendPositiveRes();
 			State = 0;
 			BuffRecived = 0;
 			BLDManger_ConcWord(&(AppArr_buff[0]),&St_App.AppEntryPoint);
 			BLDManger_ConcWord(&(AppArr_buff[4]),&St_App.AppSize);
 			BLDManger_ConcWord(&(AppArr_buff[8]),&St_App.AppFirstAdd);
-			BLDManger_SendPositiveRes();
+			RemainingSize = St_App.AppSize;
+			Loc_AppFirstAdd = St_App.AppFirstAdd;
+			BLDManger_Erase();
 			FlashingSec = TransfareData;
 		}
 		break;
 		/*	Third step in the Flashing sequence Its a request form the bus to Send the actual DATA  [0x36] */
 	case TransfareData:
+		if(State == 0)
+		{
+			Uart_RxByte(&Loc_uart , &(AppArr_buff[0]));
+			if(AppArr_buff[0] == TransfareData)
+			{
+				if(RemainingSize <= 1024 && RemainingSize > 0)
+				{
+					Uart_RXBuffer(&Loc_uart , AppArr_buff , RemainingSize);
+				}
+				else
+				{
+					Uart_RXBuffer(&Loc_uart , AppArr_buff , 1024);
+					//trace_printf("Interrupt enabled\n");
+				}
+				Glop_Response = AppArr_buff[0];
+				/*Enable the Rx Interrupt to receive Buffer with size of the Application */
+				State = 2;
+				BuffRecived = 0;
+			}
+			else
+			{
+				BLDManger_SendNegativeRes();
+				FlashingSec = SessionControl;
+				State = 0;
+			}
+		}
+		else if(State == 2 && BuffRecived == 1)
+		{
+			BuffRecived = 0;
+			State = 0;
+			if(RemainingSize <= 1024 && RemainingSize > 0)
+			{
+				BLDManger_FlashApp(RemainingSize);
+				BLDManger_SendPositiveRes();
+				FlashingSec = CRC;
+				State = 0;
+				break;
+			}
+			else
+			{
+				BLDManger_FlashApp(1024);
+				RemainingSize = RemainingSize - 1024;
+			}
+			BLDManger_SendPositiveRes();
+			trace_printf("Remaining %d bytes\n",RemainingSize);
+		}
+		break;
+	case CRC:
 		if(State == 0)
 		{
 			Uart_RXBuffer(&Loc_uart , AppArr_buff , 1);
@@ -199,30 +259,35 @@ void BLDManger_FlashingTask(void)
 		else if(State == 1 && BuffRecived == 1)
 		{
 			BuffRecived = 0;
-			if(AppArr_buff[0] == TransfareData)
+			if(AppArr_buff[0] == CRC)
 			{
 				Glop_Response = AppArr_buff[0];
+				Uart_RXBuffer(&Loc_uart , AppArr_buff , 4);
 				State = 2;
-				/*Enable the Rx Interrupt to receive Buffer with size of the Application */
-				Uart_RXBuffer(&Loc_uart , AppArr_buff , St_App.AppSize);
 			}
 			else
 			{
+				State = 0;
 				BLDManger_SendNegativeRes();
 				FlashingSec = SessionControl;
-				State = 0;
 			}
 		}
 		else if(State == 2 && BuffRecived == 1)
 		{
-			BLDManger_SendPositiveRes();
-			/*Flash the app in sector(2)*/
-			BLDManger_FlashApp();
-			/*Flash app info in sector (1)*/
-			BLDManger_RaisMark();
-			FlashingSec = RequestTransfareExit;
+			uint32_t Loc_CRC,Calc_Crc;
 			State = 0;
 			BuffRecived = 0;
+			BLDManger_ConcWord(&(AppArr_buff[0]),&Loc_CRC);
+			Calc_Crc = crc32(0,(uint8_t *)St_App.AppFirstAdd,St_App.AppSize);
+			if((Loc_CRC - Calc_Crc) == 0)
+			{
+				BLDManger_SendPositiveRes();
+				FlashingSec = RequestTransfareExit;
+			}
+			else
+			{
+				BLDManger_SendNegativeRes();
+			}
 		}
 		break;
 	case RequestTransfareExit:
@@ -237,11 +302,12 @@ void BLDManger_FlashingTask(void)
 			State = 0;
 			if(AppArr_buff[0] == RequestTransfareExit)
 			{
-				uint32_t CountDown = 9000;
+				uint32_t CountDown = 5000;
+
 				Glop_Response = AppArr_buff[0];
 				FlashingSec = RequestTransfareExit+1;
 				BLDManger_SendPositiveRes();
-				/*Busy wait Before reset*/
+				BLDManger_RaisMark();
 				while(CountDown != 0)
 				{
 					--CountDown;
@@ -264,13 +330,18 @@ void RXBuffCblt(void)
 	BuffRecived = 1;
 }
 
-static void BLDManger_FlashApp(void)
+static void BLDManger_Erase(void)
+{
+	Flash_SectorErase(2);
+	Flash_SectorErase(3);
+	Flash_SectorErase(4);
+	Flash_SectorErase(5);
+}
+static void BLDManger_FlashApp(uint32_t size)
 {
 	uint32_t data;
 	uint32_t index;
-	Flash_SectorErase(2);
-	uint32_t Loc_AppFirstAdd = St_App.AppFirstAdd;
-	for(index = 0 ; index < St_App.AppSize ; index+=4)
+	for(index = 0 ; index < size ; index+=4)
 	{
 		data =  (uint64_t)((uint32_t)AppArr_buff[index] | (uint32_t)AppArr_buff[index+1]<<8 | (uint32_t)AppArr_buff[index+2] <<16 | (uint32_t)AppArr_buff[index+3]<<24);
 		Flash_Program(FLASH_PROGRAM_SIZE_x32 , Loc_AppFirstAdd , data);
@@ -300,4 +371,20 @@ static void BLDManger_RaisMark(void)
 	Flash_Program(FLASH_PROGRAM_SIZE_x32 , MARK_ADD + 8 , St_App.AppSize);
 }
 
+static uint32_t crc32(uint32_t crc, uint8_t *buf, size_t len)
+{
+    crc = ~crc;
+    while (len--) {
+        crc ^= *buf++;
+        crc = crc & 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
+        crc = crc & 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
+        crc = crc & 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
+        crc = crc & 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
+        crc = crc & 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
+        crc = crc & 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
+        crc = crc & 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
+        crc = crc & 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1;
+    }
+    return ~crc;
+}
 

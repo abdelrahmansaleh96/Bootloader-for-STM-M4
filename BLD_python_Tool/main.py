@@ -104,30 +104,29 @@ def Flash_TransfareData(self,Port):
   time.sleep(1)
   block_size = 1024
   u = 50;
+  time.sleep(3)
   for start in range(0 , len(bin_data) , block_size):
-      Port.write([0x36])
-      end = start + block_size
-      if end > len(bin_data):
-          end = len(bin_data)
-      print(end)
-      transfer_data = bin_data[start:end]
-      time.sleep(2)
-      u+=5
-      self.progressBar.setValue(u)
-      time.sleep(1)
-      Port.write(transfer_data)
-      #print(transfer_data)
-      print(len(transfer_data))
-      data = int.from_bytes(Port.read(1),'big')
-      if data != (0x36 + 0x10):
-        return 'Nok' , 'Error TransfareData ' + str(data)
+    Port.write([0x36])
+    end = start + block_size
+    if end > len(bin_data):
+        end = len(bin_data)
+    transfer_data = bin_data[start:end]
+    time.sleep(1)
+    Port.write(transfer_data)
+    u+=5
+    self.progressBar.setValue(u)
+    
+    print("data send "+ str(end))
+    data = int.from_bytes(Port.read(1),'big')
+    if data != (0x36 + 0x10):
+      return 'Nok' , 'Error TransfareData ' + str(data)
   return 'Ok',' '
 
 def Flash_RequestTransfareExit(Port):
   
   print(Flash_RequestTransfareExit)
   Port.write([0x37])
-  Port.write([0x37])
+  
   data = int.from_bytes(Port.read(1),'big')
   
   if data == (0x37 + 0x10):

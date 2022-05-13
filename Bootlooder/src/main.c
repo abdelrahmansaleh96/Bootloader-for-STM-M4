@@ -11,8 +11,6 @@
 
 
 
-#define first_add		0x08004000
-#define entry		    0x080042B5
 typedef void (*Notify_t)(void);
 
 
@@ -31,6 +29,7 @@ int main(int argc, char* argv[])
 		{
 			BLDManger_FlashingTask();
 		}
+
 	}
 	else
 	{
