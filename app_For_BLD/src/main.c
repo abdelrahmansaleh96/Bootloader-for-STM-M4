@@ -16,12 +16,12 @@ int main(int argc, char* argv[])
 	BLDManger_UartInit();
 	GpioPincfg_t stpin;
 	stpin.port = GPIOA;
-	stpin.pin = 3;
+	stpin.pin = 0;
 	stpin.mode = MODE_OUTPUT_PUSH_PULL;
 	stpin.speed = SPEED_LOW;
 	RCC_EnablePriphralCLK(RCC_AHB1ENR_GPIOAEN);
 	Gpio_enuinitPinCfg(&stpin);
-	Gpio_enuSetPintValue(GPIOA, 3,1);
+	Gpio_enuSetPintValue(GPIOA, 0,1);
 	trace_printf("Hello from App\n");
 
 

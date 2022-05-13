@@ -13,6 +13,7 @@ from PySide2.QtGui import *
 from PySide2.QtWidgets import *
 from intelhex import IntelHex
 import serial.tools.list_ports
+import time
 import serial
 import re
 import sys
@@ -60,17 +61,19 @@ def Flash_SessionControl(Port):
     return 'Nok' , 'Error Flash_SessionControl ' + str(data)
 
 def Flash_RequestDowenload(Port):
-  Port.write([0x34])
   code_size = len(bin_data).to_bytes(2, byteorder='big')
   code_size = list(code_size)
   for i in range(4-len(code_size)):
     code_size.insert(0,0x00)
   print(code_size)
   RequestDowenload = Entery_piont +code_size +list([0x08] + [0x00] + [0x80]+ [0x00])
+  Port.write([0x34])
+  time.sleep(1)
   for i in RequestDowenload:
-    print(i)
     transfer_data = [i]
     Port.write(transfer_data)
+    print(transfer_data)
+    
   data = int.from_bytes(Port.read(1),'big')
   if data == (0x34+0x10):
     return 'Ok',' ' 
@@ -79,6 +82,7 @@ def Flash_RequestDowenload(Port):
   
 def Flash_TransfareData(Port):
   Port.write([0x36])
+  time.sleep(1)
   for i in range(len(bin_data)):
     transfer_data = [bin_data[i]]
     Port.write(transfer_data)
@@ -101,12 +105,21 @@ def Flash_RequestTransfareExit(Port):
     return 'Ok',' '
   else:
     return 'Nok' , 'Error Flash_RequestTransfareExit ' + str(data)
+    
+def Reconnect_withPort():
+  global Port
+  Port.close()
+  Port = serial.Serial(port = Com[0],  baudrate=9600  , timeout = 5, 
+                     parity = serial.PARITY_NONE  , stopbits = serial.STOPBITS_ONE , 
+                     bytesize = serial.EIGHTBITS)
+  
+  
 
 class Ui_Form(object):
     def setupUi(self, Form):
         if not Form.objectName():
             Form.setObjectName(u"Form")
-        Form.resize(882, 292)
+        Form.setFixedSize(882, 292)
         Form.setAutoFillBackground(False)
         Form.setStyleSheet(u"")
         self.progressBar = QProgressBar(Form)
@@ -157,6 +170,7 @@ class Ui_Form(object):
 
         QMetaObject.connectSlotsByName(Form)
         QMetaObject.connectSlotsByName(Form)
+        
         self.detect.clicked.connect(self.DetctCbf)
         self.Load.clicked.connect(self.LoadCbf)
         self.FlashEcu.clicked.connect(self.FlashEcuCbf)
@@ -184,6 +198,7 @@ class Ui_Form(object):
       self.Com_Text.setText("")
       
     def FlashEcuCbf(self):
+      global Port
       if(Path[0] != 0 and  Com[0] != 0):
         state , respons = Flash_ParceHexFile()
         if state == 'Ok':
@@ -191,6 +206,7 @@ class Ui_Form(object):
           self.Info_lable.setText("Flashing !")
         else:
           self.Info_lable.setText(respons)
+          Reconnect_withPort()
           return
           
         state , respons = Flash_SessionControl(Port)
@@ -198,6 +214,7 @@ class Ui_Form(object):
           self.progressBar.setValue(40)
         else:
           self.Info_lable.setText(respons)
+          Reconnect_withPort()
           return
           
         state , respons = Flash_RequestDowenload(Port)
@@ -205,6 +222,7 @@ class Ui_Form(object):
           self.progressBar.setValue(60)
         else:
           self.Info_lable.setText(respons)
+          Reconnect_withPort()
           return
           
         state , respons = Flash_TransfareData(Port)
@@ -212,6 +230,7 @@ class Ui_Form(object):
           self.progressBar.setValue(80)
         else:
           self.Info_lable.setText(respons)
+          Reconnect_withPort()
           return
           
         state , respons = Flash_RequestTransfareExit(Port)
@@ -220,13 +239,15 @@ class Ui_Form(object):
           self.Info_lable.setText("Finshed Flashing !!")
         else:
           self.Info_lable.setText(respons)
+          Reconnect_withPort()
           return
         
         
         
         return
     def retranslateUi(self, Form):
-        Form.setWindowTitle(QCoreApplication.translate("Form", u"Form", None))
+        Form.setWindowTitle(QCoreApplication.translate("Form", u"Boot Loader Tool", None))
+        Form.setWindowIcon(QIcon('icon.png'))
         self.detect.setText(QCoreApplication.translate("Form", u"detect", None))
         self.label.setText(QCoreApplication.translate("Form", u"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
 "<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"

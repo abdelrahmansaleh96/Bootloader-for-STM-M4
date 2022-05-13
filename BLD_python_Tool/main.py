@@ -17,30 +17,34 @@ import time
 import serial
 import re
 import sys
-fileName = []
+import zlib
 
 
-Path=[]
-Com=[]
+Path=0
+Com=0
 bin_data=0
 Port = 0 
-Path.append(0)
-Com.append(0)
 Entery_piont = 0
 First_Adress = 0
-
+CRC = 0
 
 
 def Flash_ParceHexFile():
   global bin_data
   global Entery_piont
+  global Path
+  global CRC
   try: 
     hex_obj = IntelHex()                     # create empty object
-    hex_obj.fromfile(Path[0],format='hex') # load from hex
+    hex_obj.fromfile(Path,format='hex') # load from hex
     bin_data = hex_obj.tobinarray()     #Parse hex file to binary array
     x = len(bin_data)
+    CRC=0
+    CRC= zlib.crc32(bin_data)
+    CRC=CRC.to_bytes(4, 'big')
+    CRC=list(CRC)
     print("#define APP_SIZE       "+str(x))
-    f = open(Path[0],'r')
+    f = open(Path,'r')
     EntryPoint=re.findall(r':04000005(........)..',f.read())
     num = int(EntryPoint[0],16)
     bytes=num.to_bytes(4, 'big')
@@ -53,6 +57,7 @@ def Flash_ParceHexFile():
 
 def Flash_SessionControl(Port):
   Port.write([0x10])
+  time.sleep(1)
   data = int.from_bytes(Port.read(1),'big')
   
   if data == 0x20:
@@ -79,20 +84,44 @@ def Flash_RequestDowenload(Port):
     return 'Ok',' ' 
   else:
     return 'Nok' , 'Error Flash_RequestDowenload ' + str(data)
-  
-def Flash_TransfareData(Port):
-  Port.write([0x36])
-  time.sleep(1)
-  for i in range(len(bin_data)):
-    transfer_data = [bin_data[i]]
-    Port.write(transfer_data)
-    #print(str(i)+"  "+str(bin_data[i]))
-  data = int.from_bytes(Port.read(1),'big')
-  if data == (0x36 + 0x10):
-    return 'Ok',' '
-  else:
-    return 'Nok' , 'Error TransfareData ' + str(data)
 
+
+def Flash_CRC(Port):
+  global CRC
+  Port.write([0x31])
+  time.sleep(1)
+  Port.write(CRC)
+  #time.sleep(1)
+  data = int.from_bytes(Port.read(1),'big')
+  if data == (0x31+0x10):
+    return 'Ok',' ' 
+  else:
+    return 'Nok' , 'Error Flash_CRC ' + str(data)
+
+def Flash_TransfareData(self,Port):
+  global bin_data
+  bin_data = list(bin_data)
+  time.sleep(1)
+  block_size = 1024
+  u = 50;
+  for start in range(0 , len(bin_data) , block_size):
+      Port.write([0x36])
+      end = start + block_size
+      if end > len(bin_data):
+          end = len(bin_data)
+      print(end)
+      transfer_data = bin_data[start:end]
+      time.sleep(2)
+      u+=5
+      self.progressBar.setValue(u)
+      time.sleep(1)
+      Port.write(transfer_data)
+      #print(transfer_data)
+      print(len(transfer_data))
+      data = int.from_bytes(Port.read(1),'big')
+      if data != (0x36 + 0x10):
+        return 'Nok' , 'Error TransfareData ' + str(data)
+  return 'Ok',' '
 
 def Flash_RequestTransfareExit(Port):
   
@@ -108,8 +137,9 @@ def Flash_RequestTransfareExit(Port):
     
 def Reconnect_withPort():
   global Port
+  global Com
   Port.close()
-  Port = serial.Serial(port = Com[0],  baudrate=9600  , timeout = 5, 
+  Port = serial.Serial(port = Com,  baudrate=9600  , timeout = 5, 
                      parity = serial.PARITY_NONE  , stopbits = serial.STOPBITS_ONE , 
                      bytesize = serial.EIGHTBITS)
   
@@ -147,7 +177,7 @@ class Ui_Form(object):
         self.Path_lable.setGeometry(QRect(30, 20, 400, 40))
         self.Info_lable = QLabel(Form)
         self.Info_lable.setObjectName(u"Info_lable")
-        self.Info_lable.setGeometry(QRect(600, 180, 201, 20))
+        self.Info_lable.setGeometry(QRect(550, 180, 300, 20))
         self.Info_lable.setStyleSheet(u"background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(85, 170, 255, 255), stop:1 rgba(255, 255, 255, 255));")
         self.img = QLabel(Form)
         self.img.setObjectName(u"img")
@@ -177,18 +207,20 @@ class Ui_Form(object):
         
     # setupUi
     def LoadCbf(self):
+      global Path
       fileName = QFileDialog.getOpenFileName(filter ="hex Files (*.hex)" , directory = ".")
       self.Path_lable.setText(fileName[0])
-      Path[0]=fileName[0]
+      Path=fileName[0]
 
     def DetctCbf(self):
       global Port
+      global Com
       comPorts = list(serial.tools.list_ports.comports())    # get list of all devices connected through serial port
       for port in comPorts:
         if('Serial' in str(port) or 'SERIAL' in str(port)):
           self.Com_Text.setText(port.device)
-          Com[0]=port.device
-          Port = serial.Serial(port = Com[0],  baudrate=9600  , timeout = 5, 
+          Com = port.device
+          Port = serial.Serial(port = Com,  baudrate=9600  , timeout = 5, 
                                parity = serial.PARITY_NONE  , stopbits = serial.STOPBITS_ONE , 
                                bytesize = serial.EIGHTBITS)
           self.Info_lable.setText("Connected")
@@ -199,7 +231,10 @@ class Ui_Form(object):
       
     def FlashEcuCbf(self):
       global Port
-      if(Path[0] != 0 and  Com[0] != 0):
+      global Port
+      global Com
+      if(Path != 0 and  Com != 0):
+        self.progressBar.setValue(0)
         state , respons = Flash_ParceHexFile()
         if state == 'Ok':
           self.progressBar.setValue(20)
@@ -219,15 +254,23 @@ class Ui_Form(object):
           
         state , respons = Flash_RequestDowenload(Port)
         if state == 'Ok':
-          self.progressBar.setValue(60)
+          self.progressBar.setValue(50)
         else:
           self.Info_lable.setText(respons)
           Reconnect_withPort()
           return
           
-        state , respons = Flash_TransfareData(Port)
+        state , respons = Flash_TransfareData(self,Port)
         if state == 'Ok':
           self.progressBar.setValue(80)
+        else:
+          self.Info_lable.setText(respons)
+          Reconnect_withPort()
+          return
+          
+        state , respons = Flash_CRC(Port)
+        if state == 'Ok':
+          self.progressBar.setValue(90)
         else:
           self.Info_lable.setText(respons)
           Reconnect_withPort()

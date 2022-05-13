@@ -55,6 +55,7 @@
 
 #include <stdint.h>
 #include <sys/types.h>
+#include "diag/Trace.h"
 
 // ----------------------------------------------------------------------------
 
@@ -253,7 +254,8 @@ _start (void)
   //
   // Also useful on platform with external RAM, that need to be
   // initialised before filling the BSS section.
-
+	//asm("LDR r5,=0x2000ffe8");
+	//asm("mov sp,r5");
   __initialize_hardware_early ();
 
 
